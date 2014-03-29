@@ -23,8 +23,11 @@ To open the project in Eclipse:
  5. Project -> Properties
  6. C/C++ General / Preprocessor Include Paths, Macros etc. / Providers
  7. Check the `CDT GCC Build Output Parser` and `CDT GCC Built-in Compiler Settings`
+ 8. Select `CDT GCC Built-in Compiler Settings`
+ 9. Uncheck `Use global provider shared between projects`
+ 10. Add `-std=c++11` at the end of `Command to get compiler specs`.
 
-The last three steps ensure the sources are indexed correctly. It may not be the case for such a tiny project, but will help to avoid a lot of headache in future.
+The steps 5 to 10 ensure the sources are indexed correctly (including C++11 symbols). It may not be the case for such a tiny project, but will help to avoid a lot of headache in future.
     
 To build the project from command line simply do:
 
