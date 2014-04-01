@@ -43,7 +43,31 @@ int main (int argc, char *argv[]) {
 	// fn1 (4, 100);
 
 	shared_ptr<UCSNamespace> testNS (new UCSNamespace);
+	UCSRemotingClient client (testNS);
 
+
+	{
+		cout << "creating int" << endl;
+		UCSInt testInt (testNS -> get<UCSInt> ("bound"));
+		cout << "setting value" << endl;
+		testInt = 5;
+		cout << "testInt is about to be released" << endl;
+
+	}
+
+	cout << "testInt should have been released" << endl;
+
+	{
+		cout << "creating struct" << endl;
+		UCSTestStruct testStruct = (testNS -> get<UCSTestStruct> ("testStruct"));
+		cout << "setting field" << endl;
+		testStruct.field = 8;
+		cout << "struct is to be released" << endl;
+	}
+
+	cout << "struct should have been released" << endl;
+
+#if 0
 	UCSRemotingClient client (testNS);
 
 	UCSString testStr (testNS -> get<UCSString> ("bound"));
@@ -198,6 +222,10 @@ int main (int argc, char *argv[]) {
 	}
 
 #endif
+#endif
+
+	cout << "normal exit" << endl;
+
 	return 0;
 
 	

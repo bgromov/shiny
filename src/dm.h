@@ -16,11 +16,54 @@ namespace UCS {
 
 	using namespace std;
 
-	class UCSValue {
-	
+	// for some events, functors are nice.
+	// Q: why functors?
+	// A: less clumsy because of value capture.
+	// A (another): only applicable where you don't remove the functors, because functor has no reference.
+
+	// Q: can we do this with a sort of type erasure?
+	// A: maybe, let's try
+
+	class UCSEventHandler {	};
+
+	template<typename ...A> class UCSListenerList {
+
+		private:
+
+			list<pair<UCSEventHandler*,function<void(A...)>>> listeners;
+
 		public:
 
-			virtual ~UCSValue () { }
+			void addListener (UCSEventHandler *handler, function<void(A...)> listener) {
+				listeners.push_back (pair<UCSEventHandler*,function<void(A...)>> (handler, listener));
+			}
+
+			void invoke (A... params) {
+				for (auto listener: listeners)
+					listener.second (params...);
+			}
+
+			void removeListeners (UCSEventHandler *handler) {
+				// hardcore lambdas for the win. it works!
+				listeners.remove_if ([handler] (pair<UCSEventHandler*,function<void(A...)>> element) -> bool {
+					return element.first == handler;
+				});
+			}
+
+	};
+
+	class UCSValue {
+
+		public:
+
+			UCSListenerList<> onDelete;
+
+			virtual ~UCSValue () {
+				onDelete.invoke();
+			}
+
+		private:
+
 		
 	};
 
@@ -64,7 +107,15 @@ namespace UCS {
 	 *
 	 */
 
-	template<typename T> class UCSPrimitiveValue: public UCSValue {
+	class UCSSerializable: public UCSValue {
+
+		public:
+
+			UCSListenerList<UCSSerializable *> onChanged;
+
+	};
+
+	template<typename T> class UCSPrimitiveValue: public UCSSerializable {
 
 		class Listener {
 			public:
@@ -87,6 +138,7 @@ namespace UCS {
 					value = newValue;
 					for (auto listener: listeners)
 						listener -> onValueChanged (newValue);
+					onChanged.invoke (this);
 				}
 			}
 
@@ -102,7 +154,7 @@ namespace UCS {
 	// (also, generic vector is useful for things like parameter list)
 	// user interface for vector should be typesafe, of course
 
-	class UCSNamespace: public UCSValue {
+	class UCSNamespace: public UCSValue, public UCSEventHandler {
 
 		public:
 
@@ -113,31 +165,57 @@ namespace UCS {
 
 		private:
 
-			map<string, shared_ptr<UCSValue>> values;
+			// Q: why weak ptr?
+			// A: because namespace does not own the items. interface objects do.
+
+			map<string, weak_ptr<UCSValue>> values;
 			list<Listener *> listeners;
+
+			void remove (const string &key) {
+				cout << "removing " << key << endl;
+				values.erase (key);
+			}
 
 		public:
 
-			// this is rather inefficient, we should return const ref instead
+			UCSListenerList<const string &, weak_ptr<UCSValue>> onValueAdded;
 
 			template<class T> shared_ptr<UCSValue> get (const string& key) {
 
-				map<string, shared_ptr<UCSValue>>::const_iterator it = values.find (key);
+				map<string, weak_ptr<UCSValue>>::const_iterator it = values.find (key);
 				if (it != values.end ()) {
-					shared_ptr<UCSValue> value = it -> second;
-					return value;
-				} else {
-					shared_ptr<typename T::valueType> newElement (new typename T::valueType ());
-					shared_ptr<UCSValue> newValue (dynamic_pointer_cast<UCSValue> (newElement));
-					values.insert (pair<string, shared_ptr<UCSValue>> (key, newValue));
-					for (auto listener: listeners)
-						listener -> onValueAdded (key, newValue);
-					return newValue;
+					shared_ptr<UCSValue> value = it -> second.lock ();
+					if (value)
+						return value;
 				}
+
+				shared_ptr<typename T::valueType> newValue (new typename T::valueType ());
+
+				// Q: why can't you write "values.erase()" right in the lambda?
+				// A: because of "at most one implicit conversion" rule, key, being a closure parameter, won't be
+				//    automatically converted to string<basic_char>. we could convert it explicitly or call a function,
+				//    the latter being cleaner.
+
+				newValue -> onDelete.addListener (this, [=]() { remove (key); });
+				weak_ptr<UCSValue> storedValue (newValue);
+				values.insert (pair<string, weak_ptr<UCSValue>> (key, storedValue));
+				onValueAdded.invoke (key, storedValue);
+				return newValue;
 			}
 
 			void addListener (Listener* listener) {
 				listeners.push_back (listener);
+			}
+
+			~UCSNamespace () {
+
+				// generally, this should never happen. But, let's play nice and clean up after ourselves
+
+				for (auto entry: values) {
+					shared_ptr<UCSValue> value = entry.second.lock();
+					if (value)
+						value -> onDelete.removeListeners(this);
+				}
 			}
 
 	};
