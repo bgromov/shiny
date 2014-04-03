@@ -4,7 +4,7 @@
 #include <fstream>
 #include <functional>
 
-#include "dm.h"
+#include "dm_interface.h"
 #include "remoting.h"
 
 using namespace std;
