@@ -117,15 +117,9 @@ namespace UCS {
 
 	template<typename T> class UCSPrimitiveValue: public UCSSerializable {
 
-		class Listener {
-			public:
-				virtual void onValueChanged (const T& value) = 0;
-		};
-		
 		private:
 
 			T value;
-			list<Listener*> listeners;
 
 		public:
 
@@ -136,14 +130,8 @@ namespace UCS {
 			void setValue (const T& newValue) {
 				if (value != newValue) {
 					value = newValue;
-					for (auto listener: listeners)
-						listener -> onValueChanged (newValue);
 					onChanged.invoke (this);
 				}
-			}
-
-			void addListener (Listener* listener) {
-				listeners.push_back (listener);
 			}
 
 	};
@@ -156,20 +144,12 @@ namespace UCS {
 
 	class UCSNamespace: public UCSValue, public UCSEventHandler {
 
-		public:
-
-			class Listener {
-				public:
-					virtual void onValueAdded (const string& key, shared_ptr<UCSValue> value) = 0;
-			};
-
 		private:
 
 			// Q: why weak ptr?
 			// A: because namespace does not own the items. interface objects do.
 
 			map<string, weak_ptr<UCSValue>> values;
-			list<Listener *> listeners;
 
 			void remove (const string &key) {
 				cout << "removing " << key << endl;
@@ -201,10 +181,6 @@ namespace UCS {
 				values.insert (pair<string, weak_ptr<UCSValue>> (key, storedValue));
 				onValueAdded.invoke (key, storedValue);
 				return newValue;
-			}
-
-			void addListener (Listener* listener) {
-				listeners.push_back (listener);
 			}
 
 			~UCSNamespace () {
