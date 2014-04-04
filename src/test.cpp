@@ -32,19 +32,46 @@ class UCSTestStruct: public UCSStruct {
 
 };
 
-void half (int x, int y) {
-	cout << "x: " << x << " y: " << y << endl;
-	// return y + x/2;
-}
 
 int main (int argc, char *argv[]) {
 	
-	// std::function<void(int,int)> fn1 = half;
-	// fn1 (4, 100);
-
 	shared_ptr<UCSNamespace> testNS (new UCSNamespace);
 	UCSRemotingClient client (testNS);
 
+	UCSNativeFunction<UCSInt ()> noParamFunc ([] () -> UCSInt {
+		cout << "in noParamFunc" << endl;
+		return UCSInt ();
+	});
+
+	UCSNativeFunction<UCSInt (UCSInt,UCSString)> testFunc ([] (UCSInt x, UCSString str) -> UCSInt {
+		cout << "in testfunc" << endl;
+		cout << "x: " << x << endl;
+		cout << "str: " << (string) str << endl;
+		return UCSInt ();
+	});
+
+	UCSInt xParam;
+	UCSString strParam;
+
+	xParam = 5;
+	strParam = "mystring";
+
+	vector<shared_ptr<UCSValue>> params = { xParam.getUCSValue(), strParam.getUCSValue() };
+
+	cout << "calling testFunc" << endl;
+
+	testFunc.execute (params,
+			[] (shared_ptr<UCSValue> result) {
+				cout << "result!" << endl;
+			},
+			[] (const string& error) {
+				cout << "error!" << endl;
+			}
+	);
+
+
+
+#if 0
 
 	{
 		cout << "creating int" << endl;
@@ -66,6 +93,8 @@ int main (int argc, char *argv[]) {
 	}
 
 	cout << "struct should have been released" << endl;
+
+#endif
 
 #if 0
 	UCSRemotingClient client (testNS);

@@ -240,6 +240,113 @@ namespace UCS {
 
 	};
 	
+	// ---------- functions are tricky ----------------
+	// Q: what's wrong with functions?
+	// A: we have both native and managed implementations, and, at the same time, both native and managed callers.
+	//    managed caller should be able to invoke native callee, and vice versa.
+	// Q: can we wrap native implementation with managed?
+	// A: maybe
+
+	// --------- bare minimum for (managed) function -------
+	// - name
+	// - parameter list (array of types)
+	// Q: what about structs as parameters? how typesafe they are?
+	// A: no type safety on instantiation. binding will happen at the moment of execution, and that may throw
+	// A: wrong, binding will happen at the moment of instantiating function call object, and that may throw;
+	//    nevertheless, any structure may be bound to any structure, so.. UCSNamespace
+	// Q: do we actually need to store types?
+	// A: maybe not because UCSValue will take care of type checking
+
+	// Q: why callbacks?
+	// A: because we don't know how to wait for completion. function call may be invoked:
+	//    - in the native code, where we would probably block the thread to wait
+	//    - in managed code, where we would need to yield the fiber to wait
+	//    - as a result of deserialization, where we wouldn't need to wait at all
+	//    - in user interface thread, where we can't wait and we need callbacks anyway
+
+	class UCSFunction: public UCSValue {
+
+		private:
+
+			const int numParams;
+
+		public:
+
+			UCSFunction (int p_numParams): numParams (p_numParams) { }
+
+			virtual void execute (vector<shared_ptr<UCSValue>> params,
+								  function<void(shared_ptr<UCSValue>)> onResult,
+								  function<void(const string& errorMessage)> onError) = 0;
+
+	};
+
+	// Q: What do we need UCSNativeFunction for, if we could subclass UCSFunction instead?
+	// A: yes, but NativeFunction wraps functor or lambda, which provides cleaner syntax.
+	//    of course, subclassing UCSFunction is valid use.
+
+	namespace VarIndex {
+
+		template<size_t... Indices>
+		struct indices{
+		  using next = indices<Indices..., sizeof...(Indices)>;
+		};
+		template<size_t N>
+		struct build_indices{
+		  using type = typename build_indices<N-1>::type::next;
+		};
+		template <>
+		struct build_indices<0>{
+		  using type = indices<>;
+		};
+		template<size_t N>
+		using IndicesFor = typename build_indices<N>::type;
+
+	}
+
+	template<typename Result>
+	class UCSNativeFunction;
+
+	template<typename Result, typename ...Args>
+	class UCSNativeFunction<Result(Args...)>: public UCSFunction {
+
+		private:
+
+			function<Result(Args...)> func;
+
+			template<typename T, size_t Index>
+			T get_param (const vector<shared_ptr<UCSValue>>& params) {
+				return T (params[Index]);
+			}
+
+			template<size_t N, size_t... Is>
+			Result invokeFunc (const vector<shared_ptr<UCSValue>>& params, VarIndex::indices<Is...>) {
+				return func (get_param<Args,Is> (params)...);
+			}
+
+		public:
+
+			UCSNativeFunction (function<Result(Args...)> p_func):
+				UCSFunction (sizeof...(Args)),
+				func (p_func)
+				{ }
+
+			void execute (vector<shared_ptr<UCSValue>> params,
+							function<void(shared_ptr<UCSValue>)> onResult,
+							function<void(const string& errorMessage)> onError) {
+				try {
+
+					static constexpr unsigned nArgs = sizeof...(Args);
+					Result r = invokeFunc<nArgs> (params, VarIndex::IndicesFor<nArgs> ());
+					onResult (r.getUCSValue ());
+				} catch (exception &e) {
+					cout << "error: " << e.what() << endl;
+					onError (e.what());
+				}
+
+			}
+
+	};
+
 }
 
 
