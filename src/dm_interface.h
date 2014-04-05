@@ -26,6 +26,9 @@ namespace UCS {
 			UCSPrimitive ():
 				value (new valueType ()) { }
 
+			UCSPrimitive (const T& initValue):
+				value (new valueType (initValue)) { }
+
 			// copy constructor copies the reference, not the value
 			UCSPrimitive (const valueType& rhs) {
 				value = rhs.value;

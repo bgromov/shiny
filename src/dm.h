@@ -6,11 +6,9 @@
 #include <map>
 #include <vector>
 #include <stdexcept>
-#include <typeinfo>
 #include <list>
-#include <set>
 #include <functional>
-#include <type_traits>
+#include <future>
 
 namespace UCS {
 
@@ -115,6 +113,15 @@ namespace UCS {
 
 	};
 
+	class UCSError: public runtime_error {
+
+		public:
+
+			UCSError (const string& errorMessage): runtime_error (errorMessage) { }
+			UCSError (const UCSError& rhs): runtime_error (rhs.what()) { }
+
+	};
+
 	template<typename T> class UCSPrimitiveValue: public UCSSerializable {
 
 		private:
@@ -122,6 +129,9 @@ namespace UCS {
 			T value;
 
 		public:
+
+			UCSPrimitiveValue () { }
+			UCSPrimitiveValue (const T& initValue): value (initValue) { }
 
 			T getValue () const {
 				return value;
@@ -274,9 +284,7 @@ namespace UCS {
 
 			UCSFunction (int p_numParams): numParams (p_numParams) { }
 
-			virtual void execute (vector<shared_ptr<UCSValue>> params,
-								  function<void(shared_ptr<UCSValue>)> onResult,
-								  function<void(const string& errorMessage)> onError) = 0;
+			virtual future<shared_ptr<UCSValue>> execute (const vector<shared_ptr<UCSValue>>& params) = 0;
 
 	};
 
@@ -311,7 +319,7 @@ namespace UCS {
 
 		private:
 
-			function<Result(Args...)> func;
+			function<future<shared_ptr<UCSValue>>(Args...)> func;
 
 			template<typename T, size_t Index>
 			T get_param (const vector<shared_ptr<UCSValue>>& params) {
@@ -319,33 +327,95 @@ namespace UCS {
 			}
 
 			template<size_t N, size_t... Is>
-			Result invokeFunc (const vector<shared_ptr<UCSValue>>& params, VarIndex::indices<Is...>) {
+			future<shared_ptr<UCSValue>> invokeFunc (const vector<shared_ptr<UCSValue>>& params, VarIndex::indices<Is...>) {
 				return func (get_param<Args,Is> (params)...);
 			}
 
 		public:
 
-			UCSNativeFunction (function<Result(Args...)> p_func):
+			UCSNativeFunction (function<future<shared_ptr<UCSValue>> (Args...)> p_func):
 				UCSFunction (sizeof...(Args)),
 				func (p_func)
 				{ }
 
-			void execute (vector<shared_ptr<UCSValue>> params,
-							function<void(shared_ptr<UCSValue>)> onResult,
-							function<void(const string& errorMessage)> onError) {
-				try {
+			future<shared_ptr<UCSValue>> execute (const vector<shared_ptr<UCSValue>>& params) {
+				static constexpr size_t nArgs = sizeof...(Args);
+				return invokeFunc<nArgs> (params, VarIndex::IndicesFor<nArgs> ());
+			}
+	};
 
-					static constexpr unsigned nArgs = sizeof...(Args);
-					Result r = invokeFunc<nArgs> (params, VarIndex::IndicesFor<nArgs> ());
-					onResult (r.getUCSValue ());
-				} catch (exception &e) {
-					cout << "error: " << e.what() << endl;
-					onError (e.what());
-				}
+	template<typename Result>
+	class UCSNativeBlockingFunction;
 
+	template<typename Result, typename ...Args>
+	class UCSNativeBlockingFunction<Result(Args...)>: public UCSNativeFunction<Result(Args...)> {
+
+		public:
+
+			UCSNativeBlockingFunction (function<Result(Args...)> p_func):
+				UCSNativeFunction<Result(Args...)> (
+					[p_func] (Args... args) -> future<shared_ptr<UCSValue>> {
+						promise<shared_ptr<UCSValue>> promise;
+						try {
+							Result r = p_func (args...);
+							promise.set_value (r.getUCSValue ());
+						} catch (...) {
+							promise.set_exception(std::current_exception());
+						}
+						return promise.get_future();
+					}
+				)
+			{ }
+
+	};
+
+	template<typename Result>
+	class UCSNativeFunctionCall;
+
+	template<typename Result, typename ...Args>
+	class UCSNativeFunctionCall<Result(Args...)> {
+
+		private:
+
+			shared_ptr<UCSFunction> func;
+
+			template<size_t I>
+			future<shared_ptr<UCSValue>> execFunc (vector<shared_ptr<UCSValue>>& values) {
+				return func -> execute (values);
+			}
+
+			template<size_t I, typename Head, typename ...Tail>
+			future<shared_ptr<UCSValue>> execFunc (vector<shared_ptr<UCSValue>>& values, Head head, Tail... tail) {
+				values[I] = head.getUCSValue ();
+				return execFunc<I+1, Tail...> (values, tail...);
+			}
+
+		public:
+
+			UCSNativeFunctionCall () { }
+
+			UCSNativeFunctionCall (shared_ptr<UCSFunction> p_func):
+				func (p_func) { }
+
+			UCSNativeFunctionCall& operator= (const shared_ptr<UCSFunction>& rhs) {
+				func = rhs;
+				return *this;
+			}
+
+			future<shared_ptr<UCSValue>> executeAsync (Args... params) {
+				vector<shared_ptr<UCSValue>> values (sizeof...(Args));
+				return execFunc<0, Args...> (values, params...);
+			}
+
+			Result call (Args... params) {
+				vector<shared_ptr<UCSValue>> values (sizeof...(Args));
+				future<shared_ptr<UCSValue>> execFuture = execFunc<0, Args...> (values, params...);
+				execFuture.wait ();
+				return Result (execFuture.get ());
 			}
 
 	};
+
 
 }
 

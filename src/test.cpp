@@ -38,17 +38,19 @@ int main (int argc, char *argv[]) {
 	shared_ptr<UCSNamespace> testNS (new UCSNamespace);
 	UCSRemotingClient client (testNS);
 
-	UCSNativeFunction<UCSInt ()> noParamFunc ([] () -> UCSInt {
+	/* UCSNativeBlockingFunction<UCSInt ()> noParamFunc ([] () -> UCSInt {
 		cout << "in noParamFunc" << endl;
 		return UCSInt ();
-	});
+	}); */
 
-	UCSNativeFunction<UCSInt (UCSInt,UCSString)> testFunc ([] (UCSInt x, UCSString str) -> UCSInt {
-		cout << "in testfunc" << endl;
-		cout << "x: " << x << endl;
-		cout << "str: " << (string) str << endl;
-		return UCSInt ();
-	});
+
+	shared_ptr<UCSFunction> testFuncPtr (new
+		UCSNativeBlockingFunction<UCSInt (UCSInt,UCSString)> ([] (UCSInt x, UCSString str) -> UCSInt {
+			cout << "in testfunc" << endl;
+			cout << "x: " << x << endl;
+			cout << "str: " << (string) str << endl;
+			return UCSInt (x+1);
+		}));
 
 	UCSInt xParam;
 	UCSString strParam;
@@ -60,16 +62,23 @@ int main (int argc, char *argv[]) {
 
 	cout << "calling testFunc" << endl;
 
-	testFunc.execute (params,
-			[] (shared_ptr<UCSValue> result) {
-				cout << "result!" << endl;
-			},
-			[] (const string& error) {
-				cout << "error!" << endl;
-			}
-	);
+	future<shared_ptr<UCSValue>> testFuture = testFuncPtr -> execute (params);
+
+	try {
+		UCSInt value = testFuture.get();
+		cout << "value: " << value << endl;
+	} catch (exception &e) {
+		cout << "error: " << e.what() << endl;
+	}
 
 
+	UCSNativeFunctionCall<UCSInt (UCSInt,UCSString)> testFunctionCall (testFuncPtr);
+
+	cout << "calling testFunc via caller" << endl;
+
+	UCSInt result = testFunctionCall.call (6, string ("oh my caller"));
+
+	cout << "result = " << result << endl;
 
 #if 0
 
