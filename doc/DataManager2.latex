@@ -10,12 +10,14 @@
 \usepackage[a4paper,top=2cm,bottom=2cm,left=3cm,right=3cm]{geometry}
 \setmainfont[Ligatures=TeX]{Liberation Sans}
 \setmonofont{Liberation Mono}
+\defaultfontfeatures{Ligatures=TeX}
 \usepackage{polyglossia}
 \newfontfamily{\cyrillicfont}{Liberation Mono}
 \newfontfamily{\cyrillicfont}{Liberation Sans}
 \setmainlanguage[spelling=modern]{russian}
 \setotherlanguage{english}
-\tolerance 10000
+\tolerance 2000
+\emergencystretch 10pt
 
 \usepackage{listings}
 \renewcommand{\lstlistingname}{Листинг}
@@ -281,7 +283,7 @@ testStruct.field2 = 88888;
 Поэтому, как следствие, к абстрактной функции в общем случае предьявляются следующие требования:
 
 \begin{itemize}
-\item функция должна принимать на вход аргументы-значения (т.е. \detokenize{vector<shared_ptr<UCSValue>>});
+\item функция должна принимать на вход аргументы-значения (т.е. \detokenize{vector <shared_ptr<UCSValue>>});
 \item функция должна уметь выполняться асинхронно, поэтому возвращаемым типом является \detokenize{future<shared_ptr<UCSValue>>}.
 \end {itemize}
 
