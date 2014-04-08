@@ -4,7 +4,7 @@
 #include <fstream>
 #include <functional>
 
-#include "dm.h"
+#include "dm_interface.h"
 #include "remoting.h"
 
 using namespace std;
@@ -32,18 +32,80 @@ class UCSTestStruct: public UCSStruct {
 
 };
 
-void half (int x, int y) {
-	cout << "x: " << x << " y: " << y << endl;
-	// return y + x/2;
-}
 
 int main (int argc, char *argv[]) {
 	
-	// std::function<void(int,int)> fn1 = half;
-	// fn1 (4, 100);
-
 	shared_ptr<UCSNamespace> testNS (new UCSNamespace);
+	UCSRemotingClient client (testNS);
 
+	/* UCSNativeBlockingFunction<UCSInt ()> noParamFunc ([] () -> UCSInt {
+		cout << "in noParamFunc" << endl;
+		return UCSInt ();
+	}); */
+
+
+	shared_ptr<UCSFunction> testFuncPtr (new
+		UCSNativeBlockingFunction<UCSInt (UCSInt,UCSString)> ([] (UCSInt x, UCSString str) -> UCSInt {
+			cout << "in testfunc" << endl;
+			cout << "x: " << x << endl;
+			cout << "str: " << (string) str << endl;
+			return UCSInt (x+1);
+		}));
+
+	UCSInt xParam;
+	UCSString strParam;
+
+	xParam = 5;
+	strParam = "mystring";
+
+	vector<shared_ptr<UCSValue>> params = { xParam.getUCSValue(), strParam.getUCSValue() };
+
+	cout << "calling testFunc" << endl;
+
+	future<shared_ptr<UCSValue>> testFuture = testFuncPtr -> execute (params);
+
+	try {
+		UCSInt value = testFuture.get();
+		cout << "value: " << value << endl;
+	} catch (exception &e) {
+		cout << "error: " << e.what() << endl;
+	}
+
+
+	UCSNativeFunctionCall<UCSInt (UCSInt,UCSString)> testFunctionCall (testFuncPtr);
+
+	cout << "calling testFunc via caller" << endl;
+
+	UCSInt result = testFunctionCall.call (6, string ("oh my caller"));
+
+	cout << "result = " << result << endl;
+
+#if 0
+
+	{
+		cout << "creating int" << endl;
+		UCSInt testInt (testNS -> get<UCSInt> ("bound"));
+		cout << "setting value" << endl;
+		testInt = 5;
+		cout << "testInt is about to be released" << endl;
+
+	}
+
+	cout << "testInt should have been released" << endl;
+
+	{
+		cout << "creating struct" << endl;
+		UCSTestStruct testStruct = (testNS -> get<UCSTestStruct> ("testStruct"));
+		cout << "setting field" << endl;
+		testStruct.field = 8;
+		cout << "struct is to be released" << endl;
+	}
+
+	cout << "struct should have been released" << endl;
+
+#endif
+
+#if 0
 	UCSRemotingClient client (testNS);
 
 	UCSString testStr (testNS -> get<UCSString> ("bound"));
@@ -198,6 +260,10 @@ int main (int argc, char *argv[]) {
 	}
 
 #endif
+#endif
+
+	cout << "normal exit" << endl;
+
 	return 0;
 
 	

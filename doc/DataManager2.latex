@@ -1,0 +1,490 @@
+\documentclass[11pt]{article}
+\usepackage[bookmarks=true]{hyperref}
+\hypersetup{bookmarksopen=true,bookmarksopenlevel=3}
+\usepackage{titling}
+\usepackage{fontspec}
+\usepackage{indentfirst}
+\usepackage{caption}
+\usepackage{tikz}
+\usepackage{tikz-qtree}
+\usepackage[a4paper,top=2cm,bottom=2cm,left=3cm,right=3cm]{geometry}
+\setmainfont[Ligatures=TeX]{Liberation Sans}
+\setmonofont{Liberation Mono}
+\usepackage{polyglossia}
+\newfontfamily{\cyrillicfont}{Liberation Mono}
+\newfontfamily{\cyrillicfont}{Liberation Sans}
+\setmainlanguage[spelling=modern]{russian}
+\setotherlanguage{english}
+\tolerance 10000
+
+\usepackage{listings}
+\renewcommand{\lstlistingname}{Листинг}
+\usepackage{color}
+
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=tb,
+  language=C++,
+  aboveskip=20pt,
+  belowskip=20pt,
+  showstringspaces=false,
+  columns=flexible,
+  basicstyle={\small\ttfamily},
+  numbers=none,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue},
+  commentstyle=\color{dkgreen},
+  stringstyle=\color{mauve},
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=2,
+  captionpos=b
+}
+
+\captionsetup[lstlisting]{ margin=0pt, font={rm,footnotesize} }
+\captionsetup[figure]{ margin=0pt, font={rm,footnotesize} }
+\captionsetup[table]{ margin=0pt, font={rm,footnotesize} }
+
+\usetikzlibrary{arrows,automata}
+\usetikzlibrary{positioning}
+
+\hyphenation{UCSValue}
+
+\title{Data Manager 2 \\ \small Структура и интерфейсы}
+\author{Николай Шадрин}
+\date{\today}
+
+\begin{document}
+
+\begin{titlingpage}
+\setlength{\droptitle}{30pt}
+\maketitle
+\begin{abstract}
+Документ описывает представление данных в Data Manager 2, и объясняет, почему оно именно такое.
+Документ определяет интерфейсы к Data Manager 2 и механизмы расширения Data Manager 2 для реализации
+конкретных задач.
+\end{abstract}
+\end{titlingpage}
+
+\tableofcontents
+\clearpage
+ 
+\section{Что такое Data Manager 2?}
+
+DM2 - это набор классов, реализующих обмен данными между разными частями системы UCS, а именно:
+\begin{itemize}
+  \item компонентами внутри основного процесса UCS;
+  \item программами на UCSL;
+  \item внешними процессами UCS;
+  \item удаленными компонентами UCS, такими, как терминал.
+\end{itemize} 
+
+К реализации DM2 предъявляются следующие требования:
+\begin{itemize}
+  \item доступ к значениям переменных должен быть эффективным;
+  \item данные должны быть структурированы;
+  \item реализация должна быть легко расширяемой и модифицируемой под конкретную задачу.  
+\end{itemize} 
+
+DM2 не является "хранилищем переменных"; кроме того, DM2 не определяет сетевой протокол в случае обмена данными по сети. Более того, DM2 
+не определяет конкретные типы данных, которыми будут обмениваться компоненты; однако, конкретная реализация DM2, разумеется, требует спецификации типов.
+
+\section{Представление данных в DM2}
+
+DM2 определяет концепцию "класса-значения" (UCSValue) и "класса-интерфейса к значению" (например, UCSInt).
+Класс-значение содержит, собственно, значение переменной; в случае примитивного типа, например, \emph{int}, он просто содержит поле типа \emph{int}.
+Конкретный экземпляр класса-интерфейса содержит указатель (\detokenize{shared_ptr}) на экземпляр значения.
+
+\begin{figure}[!htbp]
+\begin{center}
+\begin{tikzpicture}[grow'=right]
+\tikzset{level distance=120pt,sibling distance=20pt}
+\tikzset{execute at begin node=\strut}
+\tikzset{edge from parent/.style={draw, edge from parent path={(\tikzparentnode.east) -- +(16pt,0pt) |- (\tikzchildnode.west)}}}
+\Tree [
+	.UCSValue 
+	UCSNamespace
+	UCSVectorValue
+	[ .UCSSerializable
+		UCSPrimitiveValue<T>
+	]
+	UCSFunction
+]
+\end{tikzpicture}
+\end{center}
+\caption{Диаграмма наследования классов-значений}
+\end{figure}
+
+
+Для получения доступа к значению клиент DM2 создает экземпляр класса-интерфейса к значению требуемого типа (например, экземпляр UCSInt),
+который связывается с определенным экземпляром класса-значения (например, UCSPrimitiveValue<int>).
+Другой клиент DM2 может создать свой экземпляр UCSInt,который тоже будет связан с этим значением; таким образом, обеспечивается общий доступ к данным.
+
+Для того, чтобы два клиента DM2 могли получить доступ к одному и тому же значению, должен быть какой-то механизм именования значений.
+Для этого DM2 определяет вводит концепцию \emph{контейнера} - значения, содержащего другие значения.
+
+Определены следующие типы контейнеров:
+\begin{description}
+\item[UCSNamespace] \hfill \\	
+	содержит неопределенное число именованных значений; ключ - строка (\emph{std::string}).
+	Значения могут быть произвольных типов.
+\item[UCSVectorValue] \hfill \\	
+	содержит неопределенное число значений, индексируемых целочисленным неотрицательным индексом.
+\end{description}
+
+Необходимо обратить внимание, что контейнеры содержат \emph{экземпляры классов-значений} - например, UCSPrimitiveValue<int>, а не примитивы (например, int).
+Поскольку контейнеры сами являются значениями (UCSNamespace и UCSArray наследуются от UCSValue), то контейнер может содержать контейнер.
+Конструкции типа "массив структур" и "структура, содержащая массив" должны работать корректно.
+
+Каждому классу-значению (унаследованному от UCSValue) соответствует класс-интерфейс, в частности:
+
+\begin{table}[!htbp]
+\begin{center}
+\begin{tabular}{ll}
+\hline
+Класс-значение    	& Класс-интерфейс  \\
+\hline
+UCSNamespace 						& UCSStruct	              \\
+UCSPrimitiveValue<T>      			& UCSPrimitive<T>	      \\
+UCSVectorValue						& UCSVector<T>            \\
+\hline
+\end{tabular}
+\end{center}
+\caption{Соответствие классов-значений классам-интерфейсам}
+\end{table}
+
+\subsection{Требования к классу-значению}
+
+Класс-значение должен:
+\begin{itemize}
+\item быть унаследован от UCSValue;
+\item иметь default constructor;
+\item иметь copy constructor;
+\item если значение должно передаваться по сети, то класс-значение должен быть унаследован от UCSSerializable и реализовывать соответствующие методы.
+\end{itemize}
+
+Контейнеры, хотя и являются значениями, не передаются по сети (передаются только элементы). См. далее "Сериализация".
+
+\subsection{Требования к классу-интерфейсу}
+
+Класс-интерфейс должен:
+\begin{itemize}
+\item иметь default constructor, создающий пустое значение (используя default constructor соответствующего типа-значения);
+\item иметь конструктор \detokenize{(shared_ptr<UCSValue>)}, создающий интерфейс к данному значению;
+\item иметь метод getUCSValue(), возвращающий \detokenize{shared_ptr} указатель на значение;
+\item иметь поле typedef X valueType, где X - тип класса-значения.
+\end{itemize}
+
+\subsection{Цикл жизни значений}
+
+Значение существует, пока есть хотя бы один интерфейс к значению. Поэтому класс-интерфейс содержит \detokenize{shared_ptr} указатель на класс-значение.
+
+Класс-контейнер содержит только \emph{\detokenize{weak_ptr}} указатели на значения, так как, например, существование переменной в UCSNamespace актуально только
+до тех пор, пока есть клиенты, адресующие это поле. Для того, чтобы контейнер мог удалить из себя значение, которое больше никто не использует, 
+класс UCSValue определяет событие onDelete, вызываемое в деструкторе UCSValue; класс UCSNamespace регистрирует себя как получатель этого события при добавлении в
+себя значения.
+
+\section{Связывание интерфейсов и значений}
+
+Для того, чтобы клиент DM мог использовать какие-то общие данные, он должен создать экземпляр класса-интерфейса (например, UCSInt), передав ему указатель на
+соответствующее значение (например, UCSPrimitiveValue<int>). Чтобы как-то получить этот указатель, требуемое значение должно содержаться в контейнере - например,
+в UCSNamespace, откуда клиент может получить этот указатель по имени значения, или в UCSVectorValue, откуда его можно получить по индексу.
+Это означает, что весь набор общих данных должен содержаться в каком-то контейнере верхнего уровня; логично, что этот контейнер - UCSNamespace, т.к. удобно
+адресовать значения по имени. С практической точки зрения это означает, что все клиенты DM получают указатель на корневой контейнер, и создают свои общие данные в
+этом контейнере.
+
+Фактически, это означает, что указатель на корневой контейнер - это и есть интерфейс к DM с точки зрения клиентов. 
+
+\subsection{Метод UCSNamespace::get}
+
+Метод \detokenize{UCSNamespace::get<T> (const string& key)} возвращает указатель (\detokenize{shared_ptr}) на именованное значение в UCSNamespace.
+Если значения с таким именем нет, оно будет создано; при этом параметр T - это класс-интерфейс к значению нужного типа, а UCSNamespace создаст объект типа
+T::valueType - этим обьясняется необходимость существования поля valueType в классе-интерфейсе.
+
+Почему так?
+
+\begin{itemize}
+\item тип значения как-то нужно задать в любом случае;
+\item указывать тип значения непосредственно неудобно, т.к. клиент не имеет дело со значениями напрямую; в то же время, тип интерфейса клиенту известен.
+\end{itemize}
+
+Практически это означает, что клиент может делать:
+
+\begin{lstlisting}[caption=Привязывание значения]
+UCSInt x (rootNamespace -> get<UCSInt> ("mySuperInt"));
+x = 5; 
+\end{lstlisting}
+
+\subsection{Поля структур}
+
+Структура - это интерфейс к UCSNamespace. Практически, это означает, что класс UCSStruct содержит указатель на UCSNamespace; этот указатель называется fields.
+
+Клиент DM может определить структуру с каким-то набором полей, создав класс, унаследованный от UCSStruct, следующим образом:
+
+\begin{lstlisting}[caption=Определение структуры]
+class UCSTestStruct: public UCSStruct {
+        
+        public:
+        
+                UCSInt field1 = UCSInt (fields -> get<UCSInt> ("superField"));
+                UCSInt field2 = UCSInt (fields -> get<UCSInt> ("anotherSuperField"));
+        
+        public:
+        
+                UCSTestStruct (): UCSStruct () { }
+                UCSTestStruct (shared_ptr<UCSValue> value):
+                        UCSStruct (value) { }
+
+};
+\end{lstlisting}
+
+Затем, клиент может создать экземпляр этой структуры, привязанный к значению в rootNamespace:
+
+\begin{lstlisting}[caption=Привязывание структуры]
+UCSTestStruct testStruct (rootNamespace -> get<UCSTestStruct> ("mySuperStruct");
+testStruct.field1 = 12345;
+testStruct.field2 = 88888;
+\end{lstlisting}
+
+Возможна ситуация, когда разные клиенты привязывают разные интерфейсы к одному и тому же значению-контейнеру. Например, клиент 1 может создать структуру с полями
+"field1" и "field2", а клиент2 - с полями "field2" и "field3" и привязать их к значению "mySuperStruct" в rootNamespace. Это нормальная ситуация, которая будет
+корректно обработана. Практически это может возникнуть в следующих случаях:
+
+\begin{description}
+\item[клиенту нужна только часть полей:] \hfill \\
+	остальные поля просто не будут связаны;
+\item[клиент не знает о существовании других полей:] \hfill \\
+	например, в ходе разработки были добавлены новые поля. Клиенты, которые используют только старые поля, будут работать корректно.
+\end{description}	
+
+Поскольку UCSNamespace является значением, то структуры имеют такой же цикл жизни, как и примитивы, т.е. пока существует хотя бы один интерфейс, существует и структура.
+Ситуация, когда структура (т.е. UCSNamespace) удалена раньше, чем удалены поля, является нормальной - связанные поля останутся связанными; однако, новые клиенты очевидным
+образом не смогут связаться с полями удаленной структуры.
+
+\subsection{Проверка типов}
+
+При связывании интерфейса со значением производится проверка типа (при помощи \detokenize{dynamic_pointer_cast}). Если тип значения не соответствует привязываемому интерфейсу,
+произойдет exception.
+
+\section{Функции}
+
+Специальным типом значений являются вызываемые функции. Функции могут быть вызваны:
+
+\begin{itemize}
+\item из нативного кода;
+\item из UCSL-кода;
+\item удаленно.
+\end{itemize}
+
+Поэтому, как следствие, к абстрактной функции в общем случае предьявляются следующие требования:
+
+\begin{itemize}
+\item функция должна принимать на вход аргументы-значения (т.е. \detokenize{vector<shared_ptr<UCSValue>>});
+\item функция должна уметь выполняться асинхронно, поэтому возвращаемым типом является \detokenize{future<shared_ptr<UCSValue>>}.
+\end {itemize}
+
+Функции, как и любые другие значения, могут быть добавлены в контейнер. Собственно, для того, чтобы функцию могли использовать несколько клиентов, она должна быть добавлена
+в какой-нибудь контейнер - например, rootNamespace. Разумеется, функция может быть полем структуры.
+
+Значением функции является ее реализация, а интерфейсом - объект для вызова функции.
+
+\subsection{Асинхронное выполнение - почему future?}
+
+Реализация функции не знает, как именно будет ждать ее выполнения тот, кто ее вызвал. Это может быть RPC-клиент, нативный тред, или же выражение в программе на UCSL.
+Наиболее общий механизм - это callback, но через callback неудобно передавать exception, поэтому DM2 использует future, как стандартный механизм, предлагаемый STL для
+асинхронных вызовов.
+
+Реализация не обязана быть асинхронной - если функция выполняется \emph{очень быстро}, то она имеет полное право вернуть future с уже готовым результатом.
+
+\subsection{Реализация функций}
+
+Наиболее общий способ реализации - создание подкласса UCSFunction, реализующего метод execute:
+
+\begin{lstlisting}[caption=Класс UCSFunction]
+class UCSFunction: public UCSValue {
+
+		private:
+		
+				// ....
+
+				virtual future<shared_ptr<UCSValue>> execute (const vector<shared_ptr<UCSValue>>& params) = 0;
+
+};
+\end{lstlisting}
+
+Это крайне неудобно для нативного кода, поэтому DM2 содержит две обертки для нативных функций:
+
+\begin{description}
+\item[UCSNativeFunction] для асинхронно выполняющихся функций;
+\item[UCSNativeBlockingFunction] для синхронно выполняющихся функций;
+\end{description}
+
+UCSNativeFunction представляет как UCSFunction функцию, передаваемую в виде \detokenize{std::function<R(A...)>}, где R - \detokenize{future<shared_ptr<UCSValue>}.
+Нативная реализация передается непосредственно в конструктор UCSNativeFunction и может быть лямбда-выражением или указателем на функцию или метод.
+
+UCSNativeBlockingFunction представляет как UCSFunction функцию, передаваемую в виде \detokenize{std::function<R(A...)>}, где R - класс-интерфейс к UCSValue. Например:
+
+\begin{lstlisting}[caption=Реализация нативной функции]
+       shared_ptr<UCSFunction> testFuncPtr (new
+                UCSNativeBlockingFunction<UCSInt (UCSInt,UCSString)> ([] (UCSInt x, UCSString str) -> UCSInt {
+                        cout << "in testfunc" << endl;
+                        cout << "x: " << x << endl;
+                        cout << "str: " << (string) str << endl;
+                        return UCSInt (x+1);
+                }));
+\end{lstlisting}
+
+Эти обертки реализуют метод execute(), который разбирает переданный ему вектор из UCSValue, подставляя эти параметры в std::function, и вызывает этот std::function.
+
+\subsection{Вызов функций}
+
+В общем случае, для вызова функции необходимо создать массив из ее параметров в виде вектора UCSValue, затем вызвать метод execute() и получить результат через future.
+Это неудобно для нативного кода, поэтому DM2 содержит обертку UCSNativeFunctionCall, позволяющую передавать параметры просто как параметры и получать результат как
+результат, например:
+
+\begin{lstlisting}[caption=Вызов функции]
+        UCSNativeFunctionCall<UCSInt (UCSInt,UCSString)> testFunctionCall (testFuncPtr);
+        UCSInt result = testFunctionCall.call (6, string ("oh my caller"));
+\end{lstlisting}
+
+При этом UCSNativeFunctionCall создаст вектор из UCSValue, заполнит его параметрами вызова call() и вызовет метод execute() реализации.
+
+Таким образом, используя этот механизм, программа на UCSL может вызывать функции в нативном коде и наоборот; кроме того, становится возможен удаленный вызов функции - 
+конечно, в случае, если ее параметры могут быть сериализованы.
+
+\section{Удаленный доступ}
+
+DM2 включает механизм предоставления удаленному клиенту доступа к общим данным. Под \emph{удаленным клиентом} здесь имеется в виду клиент, который не может непосредственно
+адресовать значения по указателю; он не обязательно должен быть удаленным физически или выполняться в другом процессе.
+
+Для получения доступа к удаленным данным клиент DM создает объект-прокси (UCSRemotingClient), передавая ему указатель на корневой контейнер (UCSNamespace). UCSRemotingClient
+использует какой-то абстрактный транспорт для передачи сообщений в соответствующий объект UCSRemotingServer на сервере; механизм передачи сообщений может быть произвольным.
+В рамках одного процесса сообщения могут передаваться непосредственным вызовом функции.
+
+\subsection{Связывание удаленных значений}
+
+При своем создании объект UCSRemotingClient регистрирует себя как обработчик события onValueAdded в корневом контейнере. После этого, когда в корневой контейнер добавляется
+значение, UCSRemotingClient присваивает этому значению определенный уникальный id, и передает сообщение "значению с ключом таким-то сопоставлен id такой-то" на сервер.
+Получив это сообщение, UCSRemotingServer создает объект UCSValueProxy, который привязывается к соответствующему значению на сервере и регистрирует себя как обработчик
+события onChange.
+
+При изменении значения UCSValueProxy посылает сообщение "значение с таким-то id изменилось" в UCSRemotingClient, который его обрабатывает и изменяет
+локальное значение; передача значения в обратную сторону происходит аналогично.
+
+\begin{figure}[!htbp]
+\begin{center}
+\begin{tikzpicture}[->,>=stealth']
+
+	\tikzset{
+		component/.style={
+			rectangle,
+			rounded corners,
+			draw=black, very thick,
+			minimum height=2em,
+			inner sep=2pt,
+			text centered,
+			font=\footnotesize
+			},
+		event/.style={
+			font=\footnotesize
+			},
+	}
+
+	\node[component] (UCSValue_Server) { 
+		\begin{tabular}{l}
+		\textbf{UCSValue}\\
+		\shortstack{
+			int 5
+		}
+		\end{tabular}
+	};
+	
+	\node[component, right of=UCSValue_Server,xshift=5cm] (UCSValue_Server_Proxy) { 
+		\begin{tabular}{l}
+		\textbf{UCSValueProxy}\\
+		\shortstack{
+			знает ID на клиенте: \#18
+		}
+		\end{tabular}
+	};
+	
+	\path (UCSValue_Server) edge[bend left=10] node[event,anchor=bottom,above]{onValueChanged} (UCSValue_Server_Proxy);	
+	
+	\node[component,below of=UCSValue_Server_Proxy,yshift=-1.5cm] (UCSRemotingServer) { 
+		\begin{tabular}{l}
+		\textbf{UCSRemotingServer}\\
+		\shortstack{
+			очередь сообщений
+		}
+		\end{tabular}
+	};
+	
+	\path (UCSValue_Server_Proxy) edge node[event,anchor=left,right] {\shortstack[l]{сообщение:\\ID \#18 теперь равно 5}} (UCSRemotingServer);	
+
+	\node[component, below of=UCSRemotingServer,yshift=-2cm] (UCSRemotingClient) { 
+		\begin{tabular}{l}
+		\textbf{UCSRemotingClient}\\
+		\shortstack{
+			таблица ID -> UCSValueProxy
+		}
+		\end{tabular}
+	};
+	
+	\path[dashed] (UCSRemotingServer) edge node[event,anchor=left,right]{\shortstack[l]{передача датаграммы\\транспортом}} (UCSRemotingClient);	
+
+	\node[component, below of=UCSRemotingClient,yshift=-1.5cm] (UCSValue_Client_Proxy) { 
+		\begin{tabular}{l}
+		\textbf{UCSValueProxy}\\
+		\shortstack{
+			знает указатель на UCSValue
+		}
+		\end{tabular}
+	};
+	
+	\path (UCSRemotingClient) edge node[event,anchor=left,right] {\shortstack[l]{сообщение:\\значение теперь равно 5}} (UCSValue_Client_Proxy);	
+	
+	\node[component, left of=UCSValue_Client_Proxy,xshift=-5cm] (UCSValue_Client) { 
+		\begin{tabular}{l}
+		\textbf{UCSValue}\\
+		\shortstack{
+			int 5
+		}
+		\end{tabular}
+	};
+	
+	\path (UCSValue_Client_Proxy) edge[bend left=5] node[event,anchor=top,below]{setValue(5)} (UCSValue_Client);	
+	
+	
+	
+\end{tikzpicture}
+\end{center}
+\caption{Связывание удаленного значения}
+\end{figure}
+
+Таким образом, работа с удаленным DM выглядит для клиента точно так же, как и работа с локальным.
+
+\subsection{Блоки апдейтов}
+
+Очевидно, что в случае физической сети передавать датаграмму на каждое изменение каждого значения - непозволительная роскошь. Поэтому при обработке onChange() соответствующий
+объект UCSValue помещается в очередь апдейтов, если его там еще нет.
+
+Когда транспорт сигнализирует о готовности передать очередную датаграмму, текущий блок апдейтов фиксируется и передается транспорту для сериализации и дальнейшей передачи.
+
+\subsection{Точки синхронизации}
+
+Любое событие, не являющееся апдейтом значения - например, вызов функции, сообщение о связывании или удалении значения - является точкой синхронизации, при которой текущий
+блок апдейтов фиксируется и передается транспорту как готовый к передаче; затем передается сообщение, вызвавшее синхронизацию, после чего начинает формироваться новый
+блок апдейтов. Таким образом, обеспечивается корректность состояния в промежуточных точках.
+
+\section{Текущее состояние реализации}
+
+На текущий момент не реализованы следующие компоненты DM2:
+\begin{itemize}
+\item абстрактный интерфейс к транспорту;
+\item сериализация существующих типов данных;
+\item связывание функций (вызовы функций реализованы).
+\end{itemize}
+
+\end{document}

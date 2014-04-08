@@ -4,7 +4,14 @@ project (shiny)
 
 add_definitions(
     -std=c++11
+    -pthread
 )
+
+#
+# This is needed due to a bug in libstdc++ which causes std::promise to throw "Unknown error -1" 
+#
+
+set (CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-as-needed -pthread")
 
 #include_directories ( )
 

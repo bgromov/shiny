@@ -6,21 +6,62 @@
 #include <map>
 #include <vector>
 #include <stdexcept>
-#include <typeinfo>
 #include <list>
-#include <set>
 #include <functional>
-#include <type_traits>
+#include <future>
 
 namespace UCS {
 
 	using namespace std;
 
-	class UCSValue {
-	
+	// for some events, functors are nice.
+	// Q: why functors?
+	// A: less clumsy because of value capture.
+	// A (another): only applicable where you don't remove the functors, because functor has no reference.
+
+	// Q: can we do this with a sort of type erasure?
+	// A: maybe, let's try
+
+	class UCSEventHandler {	};
+
+	template<typename ...A> class UCSListenerList {
+
+		private:
+
+			list<pair<UCSEventHandler*,function<void(A...)>>> listeners;
+
 		public:
 
-			virtual ~UCSValue () { }
+			void addListener (UCSEventHandler *handler, function<void(A...)> listener) {
+				listeners.push_back (pair<UCSEventHandler*,function<void(A...)>> (handler, listener));
+			}
+
+			void invoke (A... params) {
+				for (auto listener: listeners)
+					listener.second (params...);
+			}
+
+			void removeListeners (UCSEventHandler *handler) {
+				// hardcore lambdas for the win. it works!
+				listeners.remove_if ([handler] (pair<UCSEventHandler*,function<void(A...)>> element) -> bool {
+					return element.first == handler;
+				});
+			}
+
+	};
+
+	class UCSValue {
+
+		public:
+
+			UCSListenerList<> onDelete;
+
+			virtual ~UCSValue () {
+				onDelete.invoke();
+			}
+
+		private:
+
 		
 	};
 
@@ -64,19 +105,33 @@ namespace UCS {
 	 *
 	 */
 
-	template<typename T> class UCSPrimitiveValue: public UCSValue {
+	class UCSSerializable: public UCSValue {
 
-		class Listener {
-			public:
-				virtual void onValueChanged (const T& value) = 0;
-		};
-		
+		public:
+
+			UCSListenerList<UCSSerializable *> onChanged;
+
+	};
+
+	class UCSError: public runtime_error {
+
+		public:
+
+			UCSError (const string& errorMessage): runtime_error (errorMessage) { }
+			UCSError (const UCSError& rhs): runtime_error (rhs.what()) { }
+
+	};
+
+	template<typename T> class UCSPrimitiveValue: public UCSSerializable {
+
 		private:
 
 			T value;
-			list<Listener*> listeners;
 
 		public:
+
+			UCSPrimitiveValue () { }
+			UCSPrimitiveValue (const T& initValue): value (initValue) { }
 
 			T getValue () const {
 				return value;
@@ -85,13 +140,8 @@ namespace UCS {
 			void setValue (const T& newValue) {
 				if (value != newValue) {
 					value = newValue;
-					for (auto listener: listeners)
-						listener -> onValueChanged (newValue);
+					onChanged.invoke (this);
 				}
-			}
-
-			void addListener (Listener* listener) {
-				listeners.push_back (listener);
 			}
 
 	};
@@ -102,42 +152,56 @@ namespace UCS {
 	// (also, generic vector is useful for things like parameter list)
 	// user interface for vector should be typesafe, of course
 
-	class UCSNamespace: public UCSValue {
-
-		public:
-
-			class Listener {
-				public:
-					virtual void onValueAdded (const string& key, shared_ptr<UCSValue> value) = 0;
-			};
+	class UCSNamespace: public UCSValue, public UCSEventHandler {
 
 		private:
 
-			map<string, shared_ptr<UCSValue>> values;
-			list<Listener *> listeners;
+			// Q: why weak ptr?
+			// A: because namespace does not own the items. interface objects do.
+
+			map<string, weak_ptr<UCSValue>> values;
+
+			void remove (const string &key) {
+				cout << "removing " << key << endl;
+				values.erase (key);
+			}
 
 		public:
 
-			// this is rather inefficient, we should return const ref instead
+			UCSListenerList<const string &, weak_ptr<UCSValue>> onValueAdded;
 
 			template<class T> shared_ptr<UCSValue> get (const string& key) {
 
-				map<string, shared_ptr<UCSValue>>::const_iterator it = values.find (key);
+				map<string, weak_ptr<UCSValue>>::const_iterator it = values.find (key);
 				if (it != values.end ()) {
-					shared_ptr<UCSValue> value = it -> second;
-					return value;
-				} else {
-					shared_ptr<typename T::valueType> newElement (new typename T::valueType ());
-					shared_ptr<UCSValue> newValue (dynamic_pointer_cast<UCSValue> (newElement));
-					values.insert (pair<string, shared_ptr<UCSValue>> (key, newValue));
-					for (auto listener: listeners)
-						listener -> onValueAdded (key, newValue);
-					return newValue;
+					shared_ptr<UCSValue> value = it -> second.lock ();
+					if (value)
+						return value;
 				}
+
+				shared_ptr<typename T::valueType> newValue (new typename T::valueType ());
+
+				// Q: why can't you write "values.erase()" right in the lambda?
+				// A: because of "at most one implicit conversion" rule, key, being a closure parameter, won't be
+				//    automatically converted to string<basic_char>. we could convert it explicitly or call a function,
+				//    the latter being cleaner.
+
+				newValue -> onDelete.addListener (this, [=]() { remove (key); });
+				weak_ptr<UCSValue> storedValue (newValue);
+				values.insert (pair<string, weak_ptr<UCSValue>> (key, storedValue));
+				onValueAdded.invoke (key, storedValue);
+				return newValue;
 			}
 
-			void addListener (Listener* listener) {
-				listeners.push_back (listener);
+			~UCSNamespace () {
+
+				// generally, this should never happen. But, let's play nice and clean up after ourselves
+
+				for (auto entry: values) {
+					shared_ptr<UCSValue> value = entry.second.lock();
+					if (value)
+						value -> onDelete.removeListeners(this);
+				}
 			}
 
 	};
@@ -185,179 +249,174 @@ namespace UCS {
 			}
 
 	};
+	
+	// ---------- functions are tricky ----------------
+	// Q: what's wrong with functions?
+	// A: we have both native and managed implementations, and, at the same time, both native and managed callers.
+	//    managed caller should be able to invoke native callee, and vice versa.
+	// Q: can we wrap native implementation with managed?
+	// A: maybe
 
-	// ---- now for client-side interface. note that client-side interfaces are not derived from UCSValue.
-	// Q: why?
-	// A: client-side interfaces cannot be expected to serialize
-	// A: containers should accept only well-defined types, not UCSSupaTroopaStruct
-	// A: containers are not typesafe anyway
+	// --------- bare minimum for (managed) function -------
+	// - name
+	// - parameter list (array of types)
+	// Q: what about structs as parameters? how typesafe they are?
+	// A: no type safety on instantiation. binding will happen at the moment of execution, and that may throw
+	// A: wrong, binding will happen at the moment of instantiating function call object, and that may throw;
+	//    nevertheless, any structure may be bound to any structure, so.. UCSNamespace
+	// Q: do we actually need to store types?
+	// A: maybe not because UCSValue will take care of type checking
 
-	template<typename T> class UCSPrimitive {
+	// Q: why callbacks?
+	// A: because we don't know how to wait for completion. function call may be invoked:
+	//    - in the native code, where we would probably block the thread to wait
+	//    - in managed code, where we would need to yield the fiber to wait
+	//    - as a result of deserialization, where we wouldn't need to wait at all
+	//    - in user interface thread, where we can't wait and we need callbacks anyway
 
-		public:
-
-			typedef UCSPrimitiveValue<T> valueType;
+	class UCSFunction: public UCSValue {
 
 		private:
 
-			shared_ptr<valueType> value;
+			const int numParams;
 
 		public:
 
-			UCSPrimitive ():
-				value (new valueType ()) { }
+			UCSFunction (int p_numParams): numParams (p_numParams) { }
 
-			// copy constructor copies the reference, not the value
-			UCSPrimitive (const valueType& rhs) {
-				value = rhs.value;
-			}
-
-			UCSPrimitive (shared_ptr<UCSValue> p_value) {
-				value = dynamic_pointer_cast<valueType> (p_value);
-				if (!value)
-					throw runtime_error ("Type mismatch");
-			}
-
-			T getValue () const {
-				return value -> getValue ();
-			}
-
-			void setValue (const T& newValue) {
-				value -> setValue (newValue);
-			}
-	
-			UCSPrimitive<T>& operator= (const UCSPrimitive<T>& rhs) {
-				setValue (rhs.getValue ());
-				return *this;
-			}
-
-			UCSPrimitive<T>& operator= (const T& rhs) {
-				setValue (rhs);
-				return *this;
-			}
-
-			operator T () const {
-				return getValue ();
-			}
-
-			shared_ptr<UCSValue> getUCSValue () {
-				return dynamic_pointer_cast<UCSValue> (value);
-			}
+			virtual future<shared_ptr<UCSValue>> execute (const vector<shared_ptr<UCSValue>>& params) = 0;
 
 	};
-	
-	using UCSInt = UCSPrimitive<int>;
-	using UCSString = UCSPrimitive<string>;
-	
-	class UCSStruct {
-		
-		public:
 
-			typedef UCSNamespace valueType;
+	// Q: What do we need UCSNativeFunction for, if we could subclass UCSFunction instead?
+	// A: yes, but NativeFunction wraps functor or lambda, which provides cleaner syntax.
+	//    of course, subclassing UCSFunction is valid use.
 
-		protected:
+	namespace VarIndex {
 
-			shared_ptr<UCSNamespace> fields;
+		template<size_t... Indices>
+		struct indices{
+		  using next = indices<Indices..., sizeof...(Indices)>;
+		};
+		template<size_t N>
+		struct build_indices{
+		  using type = typename build_indices<N-1>::type::next;
+		};
+		template <>
+		struct build_indices<0>{
+		  using type = indices<>;
+		};
+		template<size_t N>
+		using IndicesFor = typename build_indices<N>::type;
 
-		public:
+	}
 
-			UCSStruct ():
-				fields (new UCSNamespace ())
-				{ }
+	template<typename Result>
+	class UCSNativeFunction;
 
-			UCSStruct (shared_ptr<UCSValue> value) {
-				fields = dynamic_pointer_cast<UCSNamespace> (value);
-				if (!fields)
-					throw runtime_error ("Type mismatch");
-			}
-
-			shared_ptr<UCSValue> getUCSValue () {
-				return dynamic_pointer_cast<UCSValue> (fields);
-			}
-		
-	};
-	
-	// client-side array is typesafe, but there are some quirks.
-	// valueT is client-side interface, too, but UCSVector contains UCSValue types.
-	// for structs, this problem does not arise because struct instantiates client-side wrappers itself.
-	// array should instantiate the array of wrappers with client-side type
-	// how about array of structs?
-	// all too easy - wrapper type should be able to construct itself from UCSValue or throw.
-
-	template<class valueT> class UCSArray: public UCSVector::Listener {
-		
-		public:
-
-			typedef UCSVector valueType;
+	template<typename Result, typename ...Args>
+	class UCSNativeFunction<Result(Args...)>: public UCSFunction {
 
 		private:
 
-			shared_ptr<UCSVector> elements;
-			vector<shared_ptr<valueT>> values;
-	
-			virtual void onSizeChanged (size_t newSize) {
-				cout << "size changed " << newSize << endl;
+			function<future<shared_ptr<UCSValue>>(Args...)> func;
+
+			template<typename T, size_t Index>
+			T get_param (const vector<shared_ptr<UCSValue>>& params) {
+				return T (params[Index]);
 			}
 
-			virtual void onValueSet (size_t index, shared_ptr<UCSValue> value) {
-				cout << "value set " << index << endl;
+			template<size_t N, size_t... Is>
+			future<shared_ptr<UCSValue>> invokeFunc (const vector<shared_ptr<UCSValue>>& params, VarIndex::indices<Is...>) {
+				return func (get_param<Args,Is> (params)...);
 			}
 
 		public:
 
-			UCSArray ():
-				elements (new UCSVector ())
+			UCSNativeFunction (function<future<shared_ptr<UCSValue>> (Args...)> p_func):
+				UCSFunction (sizeof...(Args)),
+				func (p_func)
 				{ }
 
-			UCSArray (shared_ptr<UCSValue> value)
-			{
-				elements = dynamic_pointer_cast<UCSVector> (value);
-				if (!elements)
-					throw runtime_error ("Type mismatch");
+			future<shared_ptr<UCSValue>> execute (const vector<shared_ptr<UCSValue>>& params) {
+				static constexpr size_t nArgs = sizeof...(Args);
+				return invokeFunc<nArgs> (params, VarIndex::IndicesFor<nArgs> ());
+			}
+	};
 
-				size_t vectorSize = elements -> size ();
-				values.resize (vectorSize);
-				for (size_t i = 0; i < vectorSize; i++) {
-					shared_ptr<UCSValue> value = elements -> getValue (i);
-					if (value)
-						values[i] = shared_ptr<valueT> (new valueT (value));
-					else {
-						shared_ptr<valueT> entry (new valueT ());
-						elements -> putValue (i, entry -> getUCSValue ());
-						values[i] = entry;
+	template<typename Result>
+	class UCSNativeBlockingFunction;
+
+	template<typename Result, typename ...Args>
+	class UCSNativeBlockingFunction<Result(Args...)>: public UCSNativeFunction<Result(Args...)> {
+
+		public:
+
+			UCSNativeBlockingFunction (function<Result(Args...)> p_func):
+				UCSNativeFunction<Result(Args...)> (
+					[p_func] (Args... args) -> future<shared_ptr<UCSValue>> {
+						promise<shared_ptr<UCSValue>> promise;
+						try {
+							Result r = p_func (args...);
+							promise.set_value (r.getUCSValue ());
+						} catch (...) {
+							promise.set_exception(std::current_exception());
+						}
+						return promise.get_future();
 					}
-				}
-			}
+				)
+			{ }
 
-			valueT& operator[] (size_t index) {
-
-				if (index >= values.size ())
-					values.resize (index+1);
-
-				shared_ptr<valueT> value = values[index];
-				if (value) {
-					return *value;
-				} else {
-					shared_ptr<valueT> entry (new valueT ());
-					elements -> putValue (index, entry -> getUCSValue ());
-					values[index] = entry;
-					return *entry;
-				}
-
-			}
-			
-			size_t size() const {
-				return values.size ();
-			}
-
-			shared_ptr<UCSValue> getUCSValue () {
-				return dynamic_pointer_cast<UCSValue> (elements);
-			}
-
-		
 	};
 
-	
+	template<typename Result>
+	class UCSNativeFunctionCall;
+
+	template<typename Result, typename ...Args>
+	class UCSNativeFunctionCall<Result(Args...)> {
+
+		private:
+
+			shared_ptr<UCSFunction> func;
+
+			template<size_t I>
+			future<shared_ptr<UCSValue>> execFunc (vector<shared_ptr<UCSValue>>& values) {
+				return func -> execute (values);
+			}
+
+			template<size_t I, typename Head, typename ...Tail>
+			future<shared_ptr<UCSValue>> execFunc (vector<shared_ptr<UCSValue>>& values, Head head, Tail... tail) {
+				values[I] = head.getUCSValue ();
+				return execFunc<I+1, Tail...> (values, tail...);
+			}
+
+		public:
+
+			UCSNativeFunctionCall () { }
+
+			UCSNativeFunctionCall (shared_ptr<UCSFunction> p_func):
+				func (p_func) { }
+
+			UCSNativeFunctionCall& operator= (const shared_ptr<UCSFunction>& rhs) {
+				func = rhs;
+				return *this;
+			}
+
+			future<shared_ptr<UCSValue>> executeAsync (Args... params) {
+				vector<shared_ptr<UCSValue>> values (sizeof...(Args));
+				return execFunc<0, Args...> (values, params...);
+			}
+
+			Result call (Args... params) {
+				vector<shared_ptr<UCSValue>> values (sizeof...(Args));
+				future<shared_ptr<UCSValue>> execFuture = execFunc<0, Args...> (values, params...);
+				execFuture.wait ();
+				return Result (execFuture.get ());
+			}
+
+	};
+
+
 }
 
 
