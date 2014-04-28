@@ -10,6 +10,8 @@
 #include <functional>
 #include <future>
 
+#include "eventhandler.h"
+
 namespace UCS {
 
 	using namespace std;
@@ -21,34 +23,6 @@ namespace UCS {
 
 	// Q: can we do this with a sort of type erasure?
 	// A: maybe, let's try
-
-	class UCSEventHandler {	};
-
-	template<typename ...A> class UCSListenerList {
-
-		private:
-
-			list<pair<UCSEventHandler*,function<void(A...)>>> listeners;
-
-		public:
-
-			void addListener (UCSEventHandler *handler, function<void(A...)> listener) {
-				listeners.push_back (pair<UCSEventHandler*,function<void(A...)>> (handler, listener));
-			}
-
-			void invoke (A... params) {
-				for (auto listener: listeners)
-					listener.second (params...);
-			}
-
-			void removeListeners (UCSEventHandler *handler) {
-				// hardcore lambdas for the win. it works!
-				listeners.remove_if ([handler] (pair<UCSEventHandler*,function<void(A...)>> element) -> bool {
-					return element.first == handler;
-				});
-			}
-
-	};
 
 	class UCSValue {
 
