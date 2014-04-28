@@ -1,0 +1,70 @@
+syntax = "proto2";
+
+// All the message names will resolve to UCS::Proto::<msg>
+package UCS.Proto;
+
+option optimize_for = SPEED;
+
+/*
+ * This message is never instantiated. Just serves to define
+ * the message types that come over the stream
+ *
+ * See individual message definitions for a description of
+ * payload, etc.
+ *
+ * The idea is adopted from Cap'n Proto via TrivialRPC.
+ */
+message Stream {
+  optional SessionHeader header = 1;
+  optional Error error = 2;
+  optional Data data = 3;
+}
+
+// Sent once per session
+message SessionHeader {
+  enum Transport {
+    UDP = 0;
+    TCP = 1;
+    XENO = 2;
+  }
+  optional Transport transport = 1 [default = UDP];
+}
+
+message Error {
+  enum Type {
+    // Something happened
+    UNKNOWN_ERROR = 0;
+
+    // Unable to parse payload
+    // Connection will be terminated
+    PROTOCOL_ERROR = 1;
+
+    // Unable to determine the type of received message
+    // Waiting for the next
+    UNKNOWN_MESSAGE = 2;
+  }
+  optional Type type = 1 [default = UNKNOWN_ERROR];
+  optional string description = 2;
+}
+
+/*
+ * In certain cases the payload can be fragmented, e.g.
+ * across several UDP or Xenomai datagrams. To notify
+ * the other side about the case either seq_no or
+ * seq_last should be present. Thus to reassemble the
+ * whole payload several data fields have to be
+ * concatenated.
+ */
+message Data {
+  // First fragment in series should always begin with
+  // seq_no = 0
+  optional uint32 seq_no = 1;
+
+  // if seq_last is present then it is the last fragment
+  // and seq_no is ignored.
+  // NOTE: not sure if it is a good behavior
+  optional uint32 seq_last = 2;
+
+  // Payload itself
+  optional bytes data = 15;
+}
