@@ -4,11 +4,20 @@
 #include <fstream>
 #include <functional>
 
+#include <log4cxx/logger.h>
+#include <log4cxx/basicconfigurator.h>
+#include <log4cxx/propertyconfigurator.h>
+
+#include "logger.h"
+
 #include "dm_interface.h"
 #include "remoting.h"
 
 using namespace std;
 using namespace UCS;
+
+// instantiate pointer to root logger
+log4cxx::LoggerPtr g_rootLogger(log4cxx::Logger::getLogger("UCS"));
 
 class UCSTestStruct: public UCSStruct {
 	
@@ -34,7 +43,9 @@ class UCSTestStruct: public UCSStruct {
 
 
 int main (int argc, char *argv[]) {
-	
+//        log4cxx::BasicConfigurator::configure();
+        log4cxx::PropertyConfigurator::configure("config/ucslog.properties");
+
 	shared_ptr<UCSNamespace> testNS (new UCSNamespace);
 	UCSRemotingClient client (testNS);
 
@@ -60,6 +71,11 @@ int main (int argc, char *argv[]) {
 
 	vector<shared_ptr<UCSValue>> params = { xParam.getUCSValue(), strParam.getUCSValue() };
 
+        UCS_DEBUG("This is debug message");
+        UCS_INFO("This is info message");
+        UCS_WARN("This is warn message");
+        UCS_ERROR("This is error message");
+        UCS_FATAL("This is fatal message");
 	cout << "calling testFunc" << endl;
 
 	future<shared_ptr<UCSValue>> testFuture = testFuncPtr -> execute (params);
