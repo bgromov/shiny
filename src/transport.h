@@ -8,6 +8,8 @@
 #ifndef TRANSPORT_H_
 #define TRANSPORT_H_
 
+#include <unistd.h>
+#include <stdarg.h>
 #include <sys/socket.h>
 
 #include "eventhandler.h"
@@ -16,6 +18,16 @@ namespace UCS
 {
 
 using namespace std;
+
+void debug(const char *format, ...)
+{
+  va_list argptr = NULL;
+  va_start(argptr, format);
+
+  vfprintf(stderr, format, argptr);
+
+  va_end(argptr);
+}
 
 class Transport;
 using TransportPtr = typename shared_ptr<Transport>;
@@ -34,33 +46,6 @@ public:
   virtual void close() = 0;
   virtual string getType() = 0;
 };
-
-namespace Transport
-{
-enum
-{
-  UDPMaxDatagramSize = 1500,
-  InvalidSocket = -1,
-};
-
-class UDP;
-using UDPPtr = typename shared_ptr<UDP>;
-
-class UDP: public Transport
-{
-  size_t max_datagram_size_;
-  int sock_;
-
-  size_t last_seq_no_;
-
-public:
-  UDP(): max_datagram_size_(UDPMaxDatagramSize), sock_(InvalidSocket) {}
-
-  bool connect(const string& host, int port, int conn_id);
-
-};
-
-} // namespace Transport
 
 } // namespace UCS
 
