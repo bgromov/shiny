@@ -24,6 +24,7 @@ add_custom_target (config
     ${CMAKE_SOURCE_DIR}/config ${CMAKE_BINARY_DIR}/config)
 
 add_executable (test_dm
+    color_patternlayout.cpp
     test.cpp
 )
 add_dependencies (test_dm config)
