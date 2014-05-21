@@ -6,6 +6,7 @@
  */
 
 #include "transport_udp.h"
+#include "logger.h"
 
 namespace UCS
 {
@@ -30,7 +31,7 @@ ssize_t UDP::read(uint8_t* buf, size_t size)
 {
   if(closed_)
   {
-    debug("Attempt to read on a closed socket [%d]", sock_);
+    UCS_DEBUG("Attempt to read on a closed socket [" << sock_ << "]");
     return -1;
   }
 
@@ -41,7 +42,7 @@ ssize_t UDP::write(uint8_t* buf, size_t size)
 {
   if(closed_)
   {
-    debug("Attempt to write on a closed socket [%d]", sock_);
+    UCS_DEBUG("Attempt to write on a closed socket [" << sock_ << "]");
     return -1;
   }
 
@@ -59,7 +60,7 @@ void UDP::close()
     }
     else
     {
-      debug("Something went wrong. Attempted to close invalid socket.\n");
+      UCS_DEBUG("Something went wrong. Attempted to close invalid socket.");
       closed_ = true;
     }
   }
@@ -67,6 +68,7 @@ void UDP::close()
 
 bool UDP::connect(const string& host, int port, int conn_id)
 {
+  return false;
 }
 
 } /* namespace Transport */

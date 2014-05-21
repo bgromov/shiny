@@ -19,16 +19,6 @@ namespace UCS
 
 using namespace std;
 
-void debug(const char *format, ...)
-{
-  va_list argptr = NULL;
-  va_start(argptr, format);
-
-  vfprintf(stderr, format, argptr);
-
-  va_end(argptr);
-}
-
 class Transport;
 using TransportPtr = typename shared_ptr<Transport>;
 
