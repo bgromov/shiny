@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include <string>
 #include <sstream>
 #include <iostream>
@@ -44,7 +45,9 @@ class UCSTestStruct: public UCSStruct {
 
 int main (int argc, char *argv[]) {
 //        log4cxx::BasicConfigurator::configure();
+        UCS_TRACE("Trace point 0");
         log4cxx::PropertyConfigurator::configure("config/ucslog.properties");
+        UCS_TRACE("Trace point 0.1");
 
 	shared_ptr<UCSNamespace> testNS (new UCSNamespace);
 	UCSRemotingClient client (testNS);
@@ -57,9 +60,9 @@ int main (int argc, char *argv[]) {
 
 	shared_ptr<UCSFunction> testFuncPtr (new
 		UCSNativeBlockingFunction<UCSInt (UCSInt,UCSString)> ([] (UCSInt x, UCSString str) -> UCSInt {
-			cout << "in testfunc" << endl;
-			cout << "x: " << x << endl;
-			cout << "str: " << (string) str << endl;
+	                UCS_DEBUG("in testfunc");
+	                UCS_DEBUG("x: " << x);
+	                UCS_DEBUG("str: " << (string) str);
 			return UCSInt (x+1);
 		}));
 
@@ -76,25 +79,26 @@ int main (int argc, char *argv[]) {
         UCS_WARN("This is warn message");
         UCS_ERROR("This is error message");
         UCS_FATAL("This is fatal message");
-	cout << "calling testFunc" << endl;
+
+        UCS_DEBUG("calling testFunc");
 
 	future<shared_ptr<UCSValue>> testFuture = testFuncPtr -> execute (params);
 
 	try {
 		UCSInt value = testFuture.get();
-		cout << "value: " << value << endl;
+		UCS_DEBUG("value: " << value);
 	} catch (exception &e) {
-		cout << "error: " << e.what() << endl;
+	        UCS_DEBUG("error: " << e.what());
 	}
 
 
 	UCSNativeFunctionCall<UCSInt (UCSInt,UCSString)> testFunctionCall (testFuncPtr);
 
-	cout << "calling testFunc via caller" << endl;
+	UCS_DEBUG("calling testFunc via caller");
 
 	UCSInt result = testFunctionCall.call (6, string ("oh my caller"));
 
-	cout << "result = " << result << endl;
+	UCS_DEBUG("result = " << result);
 
 #if 0
 
@@ -278,7 +282,15 @@ int main (int argc, char *argv[]) {
 #endif
 #endif
 
-	cout << "normal exit" << endl;
+	UCS_DEBUG("normal exit");
+	UCS_TRACE("Trace point 1");
+
+	unsigned i = 0;
+	while(1)
+	{
+	  sleep(1);
+	  UCS_TRACE("Trace point " << i++);
+	}
 
 	return 0;
 
