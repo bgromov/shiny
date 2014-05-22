@@ -14,11 +14,13 @@
 #include "dm_interface.h"
 #include "remoting.h"
 
+#include "transport_udp.h"
+
 using namespace std;
 using namespace UCS;
 
 // instantiate pointer to root logger
-log4cxx::LoggerPtr g_rootLogger(log4cxx::Logger::getLogger("UCS"));
+log4cxx::LoggerPtr module_logger(log4cxx::Logger::getLogger("ucs"));
 
 class UCSTestStruct: public UCSStruct {
 	
@@ -288,8 +290,15 @@ int main (int argc, char *argv[]) {
 	unsigned i = 0;
 	while(1)
 	{
+	  Transport::UDP udp(module_logger);
+	  uint8_t buf[1024] = {0};
 	  sleep(1);
 	  UCS_TRACE("Trace point " << i++);
+	  if(udp.write(buf, sizeof(buf)) == -1)
+	  {
+	    UCS_FATAL("Unable to UDP::write()");
+	    return -1;
+	  }
 	}
 
 	return 0;
