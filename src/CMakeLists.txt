@@ -25,6 +25,7 @@ add_custom_target (config
 
 add_executable (test_dm
     color_patternlayout.cpp
+    transport_udp.cpp
     test.cpp
 )
 add_dependencies (test_dm config)

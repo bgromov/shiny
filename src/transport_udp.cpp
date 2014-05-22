@@ -13,13 +13,15 @@ namespace UCS
 namespace Transport
 {
 
-UDP::UDP():
-  max_datagram_size_(UDPMaxDatagramSize),
+UDP::UDP(size_t max_datagram_size, const log4cxx::LoggerPtr& logger):
+  Module(logger, this->getModuleName()),
   sock_(InvalidSocket),
+  max_datagram_size_(max_datagram_size),
   last_seq_no_(0),
   closed_(true)
 {
-  // TODO Auto-generated constructor stub
+  if(max_datagram_size_ == 0)
+    max_datagram_size_ = UDPMaxDatagramSize;
 }
 
 UDP::~UDP()
@@ -31,7 +33,7 @@ ssize_t UDP::read(uint8_t* buf, size_t size)
 {
   if(closed_)
   {
-    UCS_DEBUG("Attempt to read on a closed socket [" << sock_ << "]");
+    UCS_ERROR("Attempt to read on a closed socket [" << sock_ << "]");
     return -1;
   }
 
@@ -42,7 +44,7 @@ ssize_t UDP::write(uint8_t* buf, size_t size)
 {
   if(closed_)
   {
-    UCS_DEBUG("Attempt to write on a closed socket [" << sock_ << "]");
+    UCS_ERROR("Attempt to write on a closed socket [" << sock_ << "]");
     return -1;
   }
 
@@ -57,6 +59,7 @@ void UDP::close()
     {
       ::close(sock_);
       closed_ = true;
+      sock_ = InvalidSocket;
     }
     else
     {

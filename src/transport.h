@@ -19,23 +19,22 @@ namespace UCS
 
 using namespace std;
 
-class Transport;
-using TransportPtr = typename shared_ptr<Transport>;
-
-class Transport: public UCSEventHandler
+class AbstractTransport: public UCSEventHandler
 {
   UCSListenerList<> onRead;
   UCSListenerList<> onWrite;
 
 public:
-  virtual ~Transport() {}
+  virtual ~AbstractTransport() {}
 
   virtual ssize_t read(uint8_t* buf, size_t size) = 0;
   virtual ssize_t write(uint8_t* buf, size_t size) = 0;
 
   virtual void close() = 0;
-  virtual string getType() = 0;
+  virtual string getType() const = 0;
 };
+
+using TransportPtr = shared_ptr<AbstractTransport>;
 
 } // namespace UCS
 
