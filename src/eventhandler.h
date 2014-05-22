@@ -8,6 +8,10 @@
 #ifndef EVENTHANDLER_H_
 #define EVENTHANDLER_H_
 
+#include <functional>
+#include <list>
+#include <memory>
+
 namespace UCS {
 
 using namespace std;
